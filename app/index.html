@@ -57,10 +57,10 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 
 <dialog id="dlg">
   <h2 style="margin:0 0 4px;font-size:18px">الإعدادات</h2>
-  <label for="key">مفتاح Claude API (يُحفظ في جوالك فقط)</label>
-  <input id="key" type="password" placeholder="sk-ant-..." autocomplete="off">
-  <label for="model">النموذج</label>
-  <input id="model" value="claude-sonnet-5-5">
+  <label for="key">مفتاح Gemini المجاني (يُحفظ في جوالك فقط)</label>
+  <input id="key" type="password" placeholder="AIza..." autocomplete="off">
+  <div class="warn" style="margin-top:10px">المفتاح المجاني من aistudio.google.com/apikey</div><label for="model">النموذج</label>
+  <input id="model" value="gemini-2.5-flash">
   <div class="btns"><button type="button" id="cancel">إلغاء</button><button type="button" class="ok" id="save">حفظ</button></div>
 </dialog>
 
@@ -89,16 +89,22 @@ function speak(text){
 
 async function ask(text){
   const key = store.get('saeed_key');
-  if(!key){ add('bot','حط مفتاح Claude API من الإعدادات أول.'); $('dlg').showModal(); return null; }
+  if(!key){ add('bot','حط مفتاح Gemini من الإعدادات أول.'); $('dlg').showModal(); return null; }
   history.push({role:'user', content:text});
   ctrl = new AbortController();
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
+  const model = store.get('saeed_model')||'gemini-2.5-flash';
+  const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent', {
     method:'POST', signal:ctrl.signal,
-    headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body: JSON.stringify({ model: store.get('saeed_model')||'claude-sonnet-5-5', max_tokens:500, system:SYSTEM, messages:history.slice(-20) })
+    headers:{'content-type':'application/json','x-goog-api-key':key},
+    body: JSON.stringify({
+      systemInstruction:{parts:[{text:SYSTEM}]},
+      contents: history.slice(-20).map(m=>({role:m.role==='user'?'user':'model', parts:[{text:m.content}]})),
+      generationConfig:{maxOutputTokens:600, thinkingConfig:{thinkingBudget:0}}
+    })
   });
-  if(!r.ok){ history.pop(); const e=await r.text(); throw new Error(r.status===401?'المفتاح غير صحيح.':('خطأ '+r.status+': '+e.slice(0,120))); }
-  const j = await r.json(); const reply = (j.content||[]).map(c=>c.text||'').join('').trim();
+  if(!r.ok){ history.pop(); const e=await r.text(); throw new Error((r.status===400||r.status===403)?'المفتاح غير صحيح أو النموذج غير متاح.':('خطأ '+r.status+': '+e.slice(0,120))); }
+  const j = await r.json(); const reply = ((j.candidates||[])[0]?.content?.parts||[]).map(c=>c.text||'').join('').trim();
+  if(!reply){ history.pop(); throw new Error('ما وصلني رد، جرّب مرة ثانية.'); }
   history.push({role:'assistant', content:reply}); return reply;
 }
 
@@ -125,9 +131,9 @@ function stop(){ active=false; try{rec&&rec.abort()}catch(_){} if(synth) synth.c
 
 $('orb').onclick = () => { if(active){ stop(); } else { active=true; listen(); } };
 $('form').onsubmit = e => { e.preventDefault(); const t=$('txt').value.trim(); if(!t) return; $('txt').value=''; try{rec&&rec.abort()}catch(_){} handle(t); };
-$('gear').onclick = () => { $('key').value = store.get('saeed_key')||''; $('model').value = store.get('saeed_model')||'claude-sonnet-5-5'; $('dlg').showModal(); };
+$('gear').onclick = () => { $('key').value = store.get('saeed_key')||''; $('model').value = store.get('saeed_model')||'gemini-2.5-flash'; $('dlg').showModal(); };
 $('cancel').onclick = () => $('dlg').close();
-$('save').onclick = () => { store.set('saeed_key',$('key').value.trim()); store.set('saeed_model',$('model').value.trim()||'claude-sonnet-5-5'); $('dlg').close(); };
+$('save').onclick = () => { store.set('saeed_key',$('key').value.trim()); store.set('saeed_model',$('model').value.trim()||'gemini-2.5-flash'); $('dlg').close(); };
 if(!store.get('saeed_key')) setTimeout(()=>$('dlg').showModal(),400);
 </script>
 </body>
