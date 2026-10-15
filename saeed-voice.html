@@ -1,0 +1,120 @@
+<title>سعيد</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
+<style>
+/* Layout: single-column chat, header with speaking indicator, composer pinned at bottom */
+:root{
+  --bg:#f3f6f4; --surface:#ffffff; --fg:#14231d; --muted:#5d6f66;
+  --accent:#0f7a5c; --accent-fg:#ffffff; --line:#d6e0da; --me:#e3efe9;
+  --font:'Tajawal',system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1815; --surface:#17241f; --fg:#e8f1ed; --muted:#8fa399; --accent:#3fc29a; --accent-fg:#06231a; --line:#27382f; --me:#1f3a30; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1815; --surface:#17241f; --fg:#e8f1ed; --muted:#8fa399; --accent:#3fc29a; --accent-fg:#06231a; --line:#27382f; --me:#1f3a30; color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--font);font-size:17px;line-height:1.7;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:0;display:flex;justify-content:center}
+.app{width:100%;max-width:720px;height:100%;display:flex;flex-direction:column;min-height:0}
+header{display:flex;align-items:center;gap:12px;padding:16px 0 12px;border-bottom:1px solid var(--line)}
+.avatar{width:46px;height:46px;border-radius:50%;background:var(--accent);color:var(--accent-fg);
+  display:grid;place-items:center;font-weight:800;font-size:22px;flex:none;transition:box-shadow .3s}
+.avatar.talking{animation:pulse 1.1s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 50%,transparent)}50%{box-shadow:0 0 0 10px transparent}}
+h1{font-size:20px;font-weight:800;margin:0;line-height:1.2}
+.sub{font-size:14px;color:var(--muted)}
+.spacer{flex:1}
+.toggle{border:1px solid var(--line);background:var(--surface);color:var(--fg);font:inherit;font-size:14px;
+  border-radius:20px;padding:6px 14px;cursor:pointer}
+.toggle[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+#log{flex:1;overflow-y:auto;min-height:0;display:flex;flex-direction:column;gap:12px;padding:18px 0}
+.msg{max-width:88%;padding:10px 14px;border-radius:14px;white-space:pre-wrap;overflow-wrap:anywhere;min-width:0}
+.msg.me{align-self:flex-start;background:var(--me)}
+.msg.bot{align-self:flex-end;background:var(--surface);border:1px solid var(--line)}
+.msg .replay{display:block;margin-top:6px;border:0;background:none;color:var(--accent);font:inherit;font-size:14px;cursor:pointer;padding:0}
+.note{color:var(--muted);font-size:14px;text-align:center}
+form{display:flex;gap:8px;padding:10px 0;padding-bottom:max(14px,env(safe-area-inset-bottom,0px));border-top:1px solid var(--line)}
+textarea{flex:1;min-width:0;resize:none;font:inherit;color:var(--fg);background:var(--surface);
+  border:1px solid var(--line);border-radius:12px;padding:10px 14px;height:48px;max-height:140px}
+textarea:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.send{border:0;border-radius:12px;background:var(--accent);color:var(--accent-fg);font:inherit;font-weight:700;padding:0 20px;cursor:pointer}
+.send:disabled{opacity:.5;cursor:default}
+@media (prefers-reduced-motion:reduce){.avatar.talking{animation:none}}
+</style>
+
+<div class="app" dir="rtl" lang="ar">
+  <header>
+    <div class="avatar" id="avatar" aria-hidden="true">س</div>
+    <div><h1>سعيد</h1><div class="sub" id="status">جاهز يا أستاذ أحمد</div></div>
+    <div class="spacer"></div>
+    <button class="toggle" id="voiceBtn" type="button" aria-pressed="true">🔊 الصوت: يعمل</button>
+  </header>
+  <div id="log" aria-live="polite">
+    <div class="note">اكتب رسالتك، أو اضغط زر الميكروفون في لوحة مفاتيح جوالك وتكلّم. سعيد يرد عليك بالصوت.</div>
+  </div>
+  <form id="form">
+    <textarea id="input" rows="1" placeholder="تكلّم أو اكتب لسعيد..." aria-label="رسالتك لسعيد"></textarea>
+    <button class="send" id="sendBtn" type="submit">إرسال</button>
+  </form>
+</div>
+
+<script>
+const SYSTEM = "أنت سعيد، الوكيل الشخصي للأستاذ أحمد. ناده دائماً «أستاذ أحمد». تكلم بالعربي بخليط مريح بين الفصيح والعامي. اجعل الرد قصير ومناسب للقراءة بالصوت (جملتين إلى أربع جمل)، بدون رموز ولا قوائم ولا تنسيق. اشرح ببساطة، وأي مصطلح إنجليزي أو تقني أضف له توضيح بالعربي. إذا كان الطلب غامض اسأله سؤال توضيح واحد. إنت تتكلم فقط في هذه الصفحة ولا تقدر تنفذ مهام على أجهزته، وإذا طلب تنفيذ قله بصراحة.";
+const $ = id => document.getElementById(id);
+const log = $('log'), input = $('input'), sendBtn = $('sendBtn'), avatar = $('avatar'), status = $('status'), voiceBtn = $('voiceBtn');
+let voiceOn = true, history = [], sample = null, arVoice = null;
+const synth = window.speechSynthesis;
+
+function pickVoice(){
+  if(!synth) return;
+  const v = synth.getVoices();
+  arVoice = v.find(x => /^ar/i.test(x.lang) && /SA/i.test(x.lang)) || v.find(x => /^ar/i.test(x.lang)) || null;
+}
+if(synth){ pickVoice(); synth.onvoiceschanged = pickVoice; }
+
+function speak(text){
+  if(!synth || !voiceOn) return;
+  synth.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'ar-SA'; if(arVoice) u.voice = arVoice; u.rate = 0.98;
+  u.onstart = () => { avatar.classList.add('talking'); status.textContent = 'سعيد يتكلم...'; };
+  const done = () => { avatar.classList.remove('talking'); status.textContent = 'جاهز يا أستاذ أحمد'; };
+  u.onend = done; u.onerror = done;
+  synth.speak(u);
+}
+function add(role, text){
+  const d = document.createElement('div'); d.className = 'msg ' + role; d.textContent = text;
+  log.appendChild(d); log.scrollTop = log.scrollHeight; return d;
+}
+voiceBtn.onclick = () => {
+  voiceOn = !voiceOn; voiceBtn.setAttribute('aria-pressed', voiceOn);
+  voiceBtn.textContent = voiceOn ? '🔊 الصوت: يعمل' : '🔇 الصوت: متوقف';
+  if(!voiceOn && synth) synth.cancel();
+};
+input.addEventListener('input', () => { input.style.height = '48px'; input.style.height = Math.min(input.scrollHeight,140) + 'px'; });
+input.addEventListener('keydown', e => { if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); $('form').requestSubmit(); }});
+
+$('form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const text = input.value.trim(); if(!text) return;
+  if(!sample){ add('bot','ما قدرت أتصل بسعيد من هنا. افتح الصفحة من تطبيق Claude أو claude.ai وسجّل دخولك.'); return; }
+  input.value = ''; input.style.height = '48px'; sendBtn.disabled = true;
+  add('me', text); history.push({role:'user', content:text});
+  const bubble = add('bot','...'); status.textContent = 'سعيد يفكر...';
+  try{
+    const convo = history.slice(-12);
+    const r = await sample(SYSTEM + "\n\nالمحادثة حتى الآن:\n" + convo.map(m => (m.role==='user'?'أحمد: ':'سعيد: ') + m.content).join("\n") + "\n\nرد الآن كسعيد على آخر رسالة فقط، بدون كتابة اسمك في البداية.", {cache:false, onText:({text}) => { bubble.textContent = text; log.scrollTop = log.scrollHeight; }});
+    const reply = r.text.trim(); bubble.textContent = reply;
+    history.push({role:'assistant', content:reply});
+    const b = document.createElement('button'); b.className='replay'; b.type='button'; b.textContent='🔁 أعد الصوت';
+    b.onclick = () => { const was=voiceOn; voiceOn=true; speak(reply); voiceOn=was; }; bubble.appendChild(b);
+    status.textContent = 'جاهز يا أستاذ أحمد'; speak(reply);
+  }catch(err){
+    bubble.textContent = err && err.code==='rate_limited' ? 'كثّرنا الطلبات، انتظر شوي وجرّب مرة ثانية.' : 'صار خطأ وما قدرت أرد. جرّب مرة ثانية.';
+    status.textContent = 'جاهز يا أستاذ أحمد';
+  }finally{ sendBtn.disabled = false; input.focus(); }
+});
+
+(async () => { try{ sample = await window.claude.use('sample'); }catch(_){ sample = null; } })();
+</script>
