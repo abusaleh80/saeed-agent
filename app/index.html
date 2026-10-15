@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f1815">
+<title>سعيد</title>
+<link rel="manifest" href="manifest.json">
+<style>
+:root{--bg:#0f1815;--surface:#17241f;--fg:#e8f1ed;--muted:#8fa399;--accent:#3fc29a;--accent-fg:#06231a;--line:#27382f;--warn:#e8a24a;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font-family:system-ui,"Segoe UI",Tahoma,sans-serif;font-size:17px;line-height:1.7;
+  display:flex;flex-direction:column;align-items:center;
+  padding:max(14px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+.wrap{width:100%;max-width:640px;height:100%;display:flex;flex-direction:column;min-height:0}
+header{display:flex;align-items:center;justify-content:space-between;gap:8px}
+h1{margin:0;font-size:20px}
+.gear{background:none;border:1px solid var(--line);color:var(--fg);border-radius:20px;padding:6px 14px;font:inherit;font-size:14px;cursor:pointer}
+#log{flex:1;overflow-y:auto;min-height:0;display:flex;flex-direction:column;gap:10px;padding:14px 0}
+.m{max-width:90%;padding:9px 14px;border-radius:14px;overflow-wrap:anywhere;white-space:pre-wrap}
+.me{align-self:flex-start;background:#1f3a30}
+.bot{align-self:flex-end;background:var(--surface);border:1px solid var(--line)}
+.hint{color:var(--muted);font-size:14px;text-align:center}
+.stage{display:flex;flex-direction:column;align-items:center;gap:10px;padding:8px 0 4px}
+#orb{width:104px;height:104px;border-radius:50%;border:0;background:var(--accent);color:var(--accent-fg);font:inherit;font-size:36px;cursor:pointer;transition:transform .2s}
+#orb.listening{animation:p 1.2s ease-in-out infinite}
+#orb.thinking{opacity:.6}
+#orb.speaking{background:#7fd8ff}
+@keyframes p{0%,100%{box-shadow:0 0 0 0 rgba(63,194,154,.55)}50%{box-shadow:0 0 0 22px rgba(63,194,154,0)}}
+#state{color:var(--muted);font-size:15px;min-height:26px;text-align:center}
+.row{display:flex;gap:8px;width:100%}
+#txt{flex:1;min-width:0;font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 12px}
+.send{border:0;border-radius:12px;background:var(--accent);color:var(--accent-fg);font:inherit;font-weight:700;padding:0 18px;cursor:pointer}
+dialog{background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:16px;width:min(92vw,460px);padding:18px}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+label{display:block;margin-top:12px;font-size:14px;color:var(--muted)}
+dialog input{width:100%;font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 10px;direction:ltr}
+.btns{display:flex;gap:8px;margin-top:16px;justify-content:flex-end}
+.btns button{font:inherit;border-radius:10px;padding:8px 16px;border:1px solid var(--line);background:none;color:var(--fg);cursor:pointer}
+.btns .ok{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:700}
+.warn{color:var(--warn);font-size:14px}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){#orb.listening{animation:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><h1>سعيد</h1><button class="gear" id="gear" type="button">⚙️ الإعدادات</button></header>
+  <div id="log" aria-live="polite"><div class="hint">اضغط الدائرة وتكلّم يا أستاذ أحمد. سعيد يسمعك، يرد بالصوت، ويرجع يسمعك تلقائياً. اضغط الدائرة مرة ثانية للإيقاف.</div></div>
+  <div class="stage">
+    <button id="orb" type="button" aria-label="ابدأ المحادثة">🎙️</button>
+    <div id="state">جاهز</div>
+    <form class="row" id="form"><input id="txt" placeholder="أو اكتب هنا..." aria-label="اكتب رسالتك"><button class="send" type="submit">إرسال</button></form>
+  </div>
+</div>
+
+<dialog id="dlg">
+  <h2 style="margin:0 0 4px;font-size:18px">الإعدادات</h2>
+  <label for="key">مفتاح Claude API (يُحفظ في جوالك فقط)</label>
+  <input id="key" type="password" placeholder="sk-ant-..." autocomplete="off">
+  <label for="model">النموذج</label>
+  <input id="model" value="claude-sonnet-5-5">
+  <div class="btns"><button type="button" id="cancel">إلغاء</button><button type="button" class="ok" id="save">حفظ</button></div>
+</dialog>
+
+<script>
+const SYSTEM = "أنت سعيد، الوكيل الصوتي الشخصي للأستاذ أحمد. ناده دائماً «أستاذ أحمد». تكلم بالعربي بخليط مريح بين الفصيح والعامي (مو متكلف ولا عامي بحت). الرد يُقرأ بالصوت، فاجعله قصير (جملتين إلى أربع جمل) بدون رموز ولا قوائم ولا تنسيق ولا إيموجي. اشرح ببساطة بدون مصطلحات تقنية، وأي مصطلح إنجليزي أضف له توضيح بالعربي. إذا كان الطلب غامض اسأل سؤال توضيح واحد. أنت هنا تتكلم فقط ولا تقدر تنفذ مهام على أجهزته، وإذا طلب تنفيذ قله بصراحة.";
+const $ = id => document.getElementById(id);
+const store = { get:k=>{try{return localStorage.getItem(k)}catch(_){return null}}, set:(k,v)=>{try{localStorage.setItem(k,v)}catch(_){}} };
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const synth = window.speechSynthesis;
+let active = false, mode = 'idle', rec = null, history = [], voice = null, ctrl = null;
+
+function setMode(m, t){ mode = m; $('orb').className = m==='idle'?'':m; $('state').textContent = t; }
+function add(role, text){ const d=document.createElement('div'); d.className='m '+role; d.textContent=text; $('log').appendChild(d); $('log').scrollTop=1e9; return d; }
+function pickVoice(){ if(!synth) return; const v=synth.getVoices(); voice = v.find(x=>/^ar[-_]SA/i.test(x.lang)) || v.find(x=>/^ar/i.test(x.lang)) || null; }
+if(synth){ pickVoice(); synth.onvoiceschanged = pickVoice; }
+
+function speak(text){
+  return new Promise(res=>{
+    if(!synth){ res(); return; }
+    synth.cancel();
+    const u = new SpeechSynthesisUtterance(text); u.lang='ar-SA'; if(voice) u.voice=voice;
+    u.onend = u.onerror = () => res();
+    setMode('speaking','سعيد يتكلم...'); synth.speak(u);
+  });
+}
+
+async function ask(text){
+  const key = store.get('saeed_key');
+  if(!key){ add('bot','حط مفتاح Claude API من الإعدادات أول.'); $('dlg').showModal(); return null; }
+  history.push({role:'user', content:text});
+  ctrl = new AbortController();
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method:'POST', signal:ctrl.signal,
+    headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body: JSON.stringify({ model: store.get('saeed_model')||'claude-sonnet-5-5', max_tokens:500, system:SYSTEM, messages:history.slice(-20) })
+  });
+  if(!r.ok){ history.pop(); const e=await r.text(); throw new Error(r.status===401?'المفتاح غير صحيح.':('خطأ '+r.status+': '+e.slice(0,120))); }
+  const j = await r.json(); const reply = (j.content||[]).map(c=>c.text||'').join('').trim();
+  history.push({role:'assistant', content:reply}); return reply;
+}
+
+async function handle(text){
+  add('me', text); setMode('thinking','سعيد يفكر...');
+  try{
+    const reply = await ask(text);
+    if(reply){ add('bot', reply); await speak(reply); }
+  }catch(e){ if(e.name!=='AbortError') add('bot', e.message || 'صار خطأ، جرّب مرة ثانية.'); }
+  if(active) listen(); else setMode('idle','جاهز');
+}
+
+function listen(){
+  if(!SR){ add('bot','متصفحك ما يدعم التعرف على الصوت. افتح الصفحة من Chrome على أندرويد.'); stop(); return; }
+  rec = new SR(); rec.lang='ar-SA'; rec.interimResults=true; rec.continuous=false;
+  let finalText='';
+  rec.onstart = () => setMode('listening','أسمعك...');
+  rec.onresult = e => { let t=''; for(const r of e.results){ t+=r[0].transcript; if(r.isFinal) finalText=t; } $('state').textContent = t || 'أسمعك...'; };
+  rec.onerror = e => { if(e.error==='not-allowed'||e.error==='service-not-allowed'){ add('bot','لازم تسمح للمتصفح باستخدام الميكروفون.'); stop(); } };
+  rec.onend = () => { if(!active || mode==='thinking' || mode==='speaking') return; if(finalText.trim()) handle(finalText.trim()); else if(active) listen(); };
+  try{ rec.start(); }catch(_){}
+}
+function stop(){ active=false; try{rec&&rec.abort()}catch(_){} if(synth) synth.cancel(); if(ctrl) ctrl.abort(); setMode('idle','جاهز'); }
+
+$('orb').onclick = () => { if(active){ stop(); } else { active=true; listen(); } };
+$('form').onsubmit = e => { e.preventDefault(); const t=$('txt').value.trim(); if(!t) return; $('txt').value=''; try{rec&&rec.abort()}catch(_){} handle(t); };
+$('gear').onclick = () => { $('key').value = store.get('saeed_key')||''; $('model').value = store.get('saeed_model')||'claude-sonnet-5-5'; $('dlg').showModal(); };
+$('cancel').onclick = () => $('dlg').close();
+$('save').onclick = () => { store.set('saeed_key',$('key').value.trim()); store.set('saeed_model',$('model').value.trim()||'claude-sonnet-5-5'); $('dlg').close(); };
+if(!store.get('saeed_key')) setTimeout(()=>$('dlg').showModal(),400);
+</script>
+</body>
+</html>
