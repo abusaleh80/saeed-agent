@@ -111,7 +111,7 @@ async function ask(text){
   if(!key){ add('bot','حط مفتاح Gemini من الإعدادات أول.'); $('dlg').showModal(); return null; }
   history.push({role:'user', content:text});
   ctrl = new AbortController();
-  const tm = setTimeout(()=>{ try{ctrl.abort('timeout')}catch(_){} }, 25000);
+  const tm = setTimeout(()=>{ try{ctrl.abort('timeout')}catch(_){} }, 60000);
   let model = store.get('saeed_model')||'gemini-flash-latest';
   let r = await callGemini(key, model, ctrl.signal);
   for(const wait of [1500, 3000]){
@@ -121,8 +121,19 @@ async function ask(text){
     r = await callGemini(key, model, ctrl.signal);
   }
   if(r.status===503 || r.status===429){
-    $('state').textContent = 'أجرب موديل ثاني...';
-    r = await callGemini(key, 'gemini-flash-lite-latest', ctrl.signal);
+    let names = [];
+    try{
+      const lr = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', {headers:{'x-goog-api-key':key}, signal:ctrl.signal});
+      if(lr.ok){ const lj = await lr.json();
+        names = (lj.models||[]).filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent') && /(flash|gemma)/i.test(m.name) && !/(live|tts|image|audio|embed|robotics|computer|vision)/i.test(m.name)).map(m=>m.name.replace('models/','')); }
+    }catch(_){}
+    names = ['gemini-flash-lite-latest', ...names].filter((n,i,a)=>n!==model && a.indexOf(n)===i).slice(0,8);
+    for(const n of names){
+      $('state').textContent = 'أجرب: '+n;
+      r = await callGemini(key, n, ctrl.signal);
+      if(r.ok){ model = n; break; }
+      if(r.status!==503 && r.status!==429 && r.status!==404) break;
+    }
   }
   if(r.status===404){
     const m = await findModel(key);
@@ -141,7 +152,7 @@ async function handle(text){
   try{
     const reply = await ask(text);
     if(reply){ add('bot', reply); await speak(reply); }
-  }catch(e){ if(e.name==='AbortError' && !active && mode!=='thinking'){} else if(e.name==='AbortError' || e==='timeout') { history.pop(); add('bot','تأخر الرد أكثر من 25 ثانية وأوقفته. جرّب مرة ثانية.'); } else add('bot', e.message || 'صار خطأ، جرّب مرة ثانية.'); }
+  }catch(e){ if(e.name==='AbortError' && !active && mode!=='thinking'){} else if(e.name==='AbortError' || e==='timeout') { history.pop(); add('bot','تأخر الرد أكثر من دقيقة وأوقفته. جرّب مرة ثانية.'); } else add('bot', e.message || 'صار خطأ، جرّب مرة ثانية.'); }
   if(active) listen(); else setMode('idle','جاهز');
 }
 
