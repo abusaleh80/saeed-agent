@@ -113,6 +113,16 @@ async function ask(text){
   ctrl = new AbortController();
   let model = store.get('saeed_model')||'gemini-flash-latest';
   let r = await callGemini(key, model, ctrl.signal);
+  for(const wait of [1500, 3000]){
+    if(r.status!==503 && r.status!==429) break;
+    $('state').textContent = 'جوجل مزدحم، أعيد المحاولة...';
+    await new Promise(z=>setTimeout(z,wait));
+    r = await callGemini(key, model, ctrl.signal);
+  }
+  if(r.status===503 || r.status===429){
+    $('state').textContent = 'أجرب موديل ثاني...';
+    r = await callGemini(key, 'gemini-flash-lite-latest', ctrl.signal);
+  }
   if(r.status===404){
     const m = await findModel(key);
     if(m){ model = m; store.set('saeed_model', m); r = await callGemini(key, model, ctrl.signal); }
