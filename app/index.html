@@ -95,16 +95,26 @@ async function findModel(key){
   const pick = ok.find(m=>/latest/i.test(m.name)) || ok.sort((x,y)=>y.name.localeCompare(x.name))[0];
   return pick ? pick.name.replace('models/','') : null;
 }
+function dbg(t){ const d=document.createElement('div'); d.className='hint'; d.textContent=t; $('log').appendChild(d); $('log').scrollTop=1e9; }
 async function callGemini(key, model, signal){
-  return fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent', {
-    method:'POST', signal,
-    headers:{'content-type':'application/json','x-goog-api-key':key},
-    body: JSON.stringify({
-      systemInstruction:{parts:[{text:SYSTEM}]},
-      contents: history.slice(-20).map(m=>({role:m.role==='user'?'user':'model', parts:[{text:m.content}]})),
-      generationConfig:{maxOutputTokens:1200}
-    })
-  });
+  const t0 = Date.now();
+  const sig = (AbortSignal.any && AbortSignal.timeout) ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : signal;
+  try{
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent', {
+      method:'POST', signal:sig,
+      headers:{'content-type':'application/json','x-goog-api-key':key},
+      body: JSON.stringify({
+        systemInstruction:{parts:[{text:SYSTEM}]},
+        contents: history.slice(-20).map(m=>({role:m.role==='user'?'user':'model', parts:[{text:m.content}]})),
+        generationConfig:{maxOutputTokens:1200}
+      })
+    });
+    dbg(model+' → '+r.status+' ('+Math.round((Date.now()-t0)/1000)+'ث)');
+    return r;
+  }catch(e){
+    dbg(model+' → انقطع بعد '+Math.round((Date.now()-t0)/1000)+'ث ('+(e.name||'خطأ')+')');
+    return {ok:false, status:503, text:async()=>String(e), json:async()=>({})};
+  }
 }
 async function ask(text){
   const key = store.get('saeed_key');
