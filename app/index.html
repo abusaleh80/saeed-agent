@@ -111,6 +111,7 @@ async function ask(text){
   if(!key){ add('bot','حط مفتاح Gemini من الإعدادات أول.'); $('dlg').showModal(); return null; }
   history.push({role:'user', content:text});
   ctrl = new AbortController();
+  const tm = setTimeout(()=>{ try{ctrl.abort('timeout')}catch(_){} }, 25000);
   let model = store.get('saeed_model')||'gemini-flash-latest';
   let r = await callGemini(key, model, ctrl.signal);
   for(const wait of [1500, 3000]){
@@ -127,6 +128,8 @@ async function ask(text){
     const m = await findModel(key);
     if(m){ model = m; store.set('saeed_model', m); r = await callGemini(key, model, ctrl.signal); }
   }
+  clearTimeout(tm);
+  $('state').textContent = 'الموديل: '+model;
   if(!r.ok){ history.pop(); const e=await r.text(); throw new Error((r.status===400||r.status===403)?'المفتاح غير صحيح أو ما له صلاحية.':('خطأ '+r.status+': '+e.slice(0,160))); }
   const j = await r.json(); const reply = ((j.candidates||[])[0]?.content?.parts||[]).filter(c=>!c.thought).map(c=>c.text||'').join('').trim();
   if(!reply){ history.pop(); throw new Error('ما وصلني رد، جرّب مرة ثانية.'); }
@@ -138,7 +141,7 @@ async function handle(text){
   try{
     const reply = await ask(text);
     if(reply){ add('bot', reply); await speak(reply); }
-  }catch(e){ if(e.name!=='AbortError') add('bot', e.message || 'صار خطأ، جرّب مرة ثانية.'); }
+  }catch(e){ if(e.name==='AbortError' && !active && mode!=='thinking'){} else if(e.name==='AbortError' || e==='timeout') { history.pop(); add('bot','تأخر الرد أكثر من 25 ثانية وأوقفته. جرّب مرة ثانية.'); } else add('bot', e.message || 'صار خطأ، جرّب مرة ثانية.'); }
   if(active) listen(); else setMode('idle','جاهز');
 }
 
