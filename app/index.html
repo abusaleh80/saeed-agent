@@ -35,7 +35,7 @@ h1{margin:0;font-size:20px}
 dialog{background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:16px;width:min(92vw,460px);padding:18px}
 dialog::backdrop{background:rgba(0,0,0,.6)}
 label{display:block;margin-top:12px;font-size:14px;color:var(--muted)}
-dialog input{width:100%;font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 10px;direction:ltr}
+dialog select,dialog input{width:100%;font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 10px;direction:ltr}
 .btns{display:flex;gap:8px;margin-top:16px;justify-content:flex-end}
 .btns button{font:inherit;border-radius:10px;padding:8px 16px;border:1px solid var(--line);background:none;color:var(--fg);cursor:pointer}
 .btns .ok{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:700}
@@ -61,6 +61,11 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
   <input id="key" type="password" placeholder="AIza..." autocomplete="off">
   <div class="warn" style="margin-top:10px">المفتاح المجاني من aistudio.google.com/apikey</div><label for="model">النموذج</label>
   <input id="model" value="gemini-flash-latest">
+  <label for="voiceSel">صوت سعيد (أصوات جوالك العربية)</label>
+  <select id="voiceSel"></select>
+  <label for="rate">سرعة الكلام: <span id="rateVal">1</span></label>
+  <input id="rate" type="range" min="0.7" max="1.3" step="0.05" value="1" style="direction:ltr">
+  <div class="btns" style="justify-content:flex-start"><button type="button" id="testVoice">🔊 جرّب الصوت</button></div>
   <div class="btns"><button type="button" id="cancel">إلغاء</button><button type="button" class="ok" id="save">حفظ</button></div>
 </dialog>
 
@@ -74,14 +79,23 @@ let active = false, mode = 'idle', rec = null, history = [], voice = null, ctrl 
 
 function setMode(m, t){ mode = m; $('orb').className = m==='idle'?'':m; $('state').textContent = t; }
 function add(role, text){ const d=document.createElement('div'); d.className='m '+role; d.textContent=text; $('log').appendChild(d); $('log').scrollTop=1e9; return d; }
-function pickVoice(){ if(!synth) return; const v=synth.getVoices(); voice = v.find(x=>/^ar[-_]SA/i.test(x.lang)) || v.find(x=>/^ar/i.test(x.lang)) || null; }
+function arVoices(){ return synth ? synth.getVoices().filter(x=>/^ar/i.test(x.lang)) : []; }
+function pickVoice(){
+  const list = arVoices(), saved = store.get('saeed_voice');
+  voice = list.find(x=>x.voiceURI===saved) || list.find(x=>/SA/i.test(x.lang)) || list[0] || null;
+  const sel = $('voiceSel'); if(!sel) return;
+  sel.innerHTML = '';
+  if(!list.length){ const o=document.createElement('option'); o.textContent='ما لقيت صوت عربي في جوالك'; sel.appendChild(o); return; }
+  list.forEach((v,i)=>{ const o=document.createElement('option'); o.value=v.voiceURI; o.textContent='صوت '+(i+1)+' — '+v.name+' ('+v.lang+')'; if(voice&&v.voiceURI===voice.voiceURI) o.selected=true; sel.appendChild(o); });
+}
 if(synth){ pickVoice(); synth.onvoiceschanged = pickVoice; }
+function rateNow(){ const r=parseFloat(store.get('saeed_rate')); return isFinite(r)?r:1; }
 
 function speak(text){
   return new Promise(res=>{
     if(!synth){ res(); return; }
     synth.cancel();
-    const u = new SpeechSynthesisUtterance(text); u.lang='ar-SA'; if(voice) u.voice=voice;
+    const u = new SpeechSynthesisUtterance(text); u.lang=(voice&&voice.lang)||'ar-SA'; if(voice) u.voice=voice; u.rate=rateNow();
     u.onend = u.onerror = () => res();
     setMode('speaking','سعيد يتكلم...'); synth.speak(u);
   });
@@ -95,7 +109,7 @@ async function findModel(key){
   const pick = ok.find(m=>/latest/i.test(m.name)) || ok.sort((x,y)=>y.name.localeCompare(x.name))[0];
   return pick ? pick.name.replace('models/','') : null;
 }
-function dbg(t){ const d=document.createElement('div'); d.className='hint'; d.textContent=t; $('log').appendChild(d); $('log').scrollTop=1e9; }
+function dbg(t){ if(store.get('saeed_debug')!=='1') return; const d=document.createElement('div'); d.className='hint'; d.textContent=t; $('log').appendChild(d); $('log').scrollTop=1e9; }
 async function callGemini(key, model, signal){
   const t0 = Date.now();
   const sig = (AbortSignal.any && AbortSignal.timeout) ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : signal;
@@ -124,7 +138,7 @@ async function ask(text){
   const tm = setTimeout(()=>{ try{ctrl.abort('timeout')}catch(_){} }, 60000);
   let model = store.get('saeed_model')||'gemini-flash-latest';
   let r = await callGemini(key, model, ctrl.signal);
-  for(const wait of [1500, 3000]){
+  for(const wait of []){
     if(r.status!==503 && r.status!==429) break;
     $('state').textContent = 'جوجل مزدحم، أعيد المحاولة...';
     await new Promise(z=>setTimeout(z,wait));
@@ -180,9 +194,12 @@ function stop(){ active=false; try{rec&&rec.abort()}catch(_){} if(synth) synth.c
 
 $('orb').onclick = () => { if(active){ stop(); } else { active=true; listen(); } };
 $('form').onsubmit = e => { e.preventDefault(); const t=$('txt').value.trim(); if(!t) return; $('txt').value=''; try{rec&&rec.abort()}catch(_){} handle(t); };
-$('gear').onclick = () => { $('key').value = store.get('saeed_key')||''; $('model').value = store.get('saeed_model')||'gemini-flash-latest'; $('dlg').showModal(); };
+$('gear').onclick = () => { $('key').value = store.get('saeed_key')||''; $('model').value = store.get('saeed_model')||'gemini-flash-latest'; $('rate').value = rateNow(); $('rateVal').textContent = rateNow(); pickVoice(); $('dlg').showModal(); };
+$('rate').oninput = () => { $('rateVal').textContent = $('rate').value; };
+$('voiceSel').onchange = () => { store.set('saeed_voice', $('voiceSel').value); pickVoice(); };
+$('testVoice').onclick = () => { store.set('saeed_rate',$('rate').value); store.set('saeed_voice',$('voiceSel').value); pickVoice(); speak('أهلاً أستاذ أحمد، أنا سعيد. وش رأيك في هذا الصوت؟'); };
 $('cancel').onclick = () => $('dlg').close();
-$('save').onclick = () => { store.set('saeed_key',$('key').value.trim()); store.set('saeed_model',$('model').value.trim()||'gemini-flash-latest'); $('dlg').close(); };
+$('save').onclick = () => { store.set('saeed_key',$('key').value.trim()); store.set('saeed_model',$('model').value.trim()||'gemini-flash-latest'); store.set('saeed_rate',$('rate').value); store.set('saeed_voice',$('voiceSel').value); pickVoice(); $('dlg').close(); };
 if(!store.get('saeed_key')) setTimeout(()=>$('dlg').showModal(),400);
 </script>
 </body>
